@@ -3,15 +3,53 @@
 import Editor from "@monaco-editor/react";
 import * as Y from "yjs"; //for the yjs doc
 import { useRef } from "react"; //for the persistent boxes to store the yjs doc, text, and observer flag
+import { WebsocketProvider } from "y-websocket"; //for the websocket provider to sync the yjs doc with the server
 
 function CodeEditor() {
   const ydoc = useRef(null); //persistent box created for the yjs doc
   const ytext = useRef(null); //persistent box created for the yjs text
   const applyingRemoteUpdate = useRef(false); //persistent box created for the yjs observer
+  const provider = useRef(null); //persistent box created for the websocket provider
+  const awareness = useRef(null); //persistent box created for the yjs awareness, cursors and presence
+  const user = useRef(null); //persistent box created for the user info, name and color. stable container for this user's identity
 
   if (!ydoc.current) {
-    ydoc.current = new Y.Doc(); //created the yjs doc and stored it in the ref box
+    ydoc.current = new Y.Doc(); //created the yjs doc and stored it in the ref box. object created
     console.log("Y.doc created");
+  }
+
+  if (!provider.current) {
+    provider.current = new WebsocketProvider(
+      "ws://localhost:1234", // url of websocket server
+      "jaiHo", // room name
+      ydoc.current, // the yjs doc to be synced
+    );
+
+    awareness.current = provider.current.awareness; // store awareness properly
+    console.log("Provider created");
+  }
+
+  if (!user.current) {
+    const username = "user" + Math.floor(Math.random() * 1000); //generate random username
+    const color =
+      "#" +
+      Math.floor(Math.random() * 16777215)
+        .toString(16)
+        .padStart(6, "0"); // ensure 6-digit hex
+    user.current = { name: username, color: color }; //store em in the user ref
+  }
+  console.log("Current user:", user.current);
+  // publish local user identity to awareness (run once)
+  if (awareness.current && !awareness.current.getLocalState()?.user) {
+    awareness.current.setLocalStateField("user", {
+      name: user.current.name,
+      color: user.current.color,
+    });
+
+    console.log(
+      "Awareness set with user info:",
+      awareness.current.getLocalState(),
+    );
   }
 
   if (!ytext.current) {
