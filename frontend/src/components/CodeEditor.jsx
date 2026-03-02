@@ -12,6 +12,7 @@ function CodeEditor() {
   const provider = useRef(null); //persistent box created for the websocket provider
   const awareness = useRef(null); //persistent box created for the yjs awareness, cursors and presence
   const user = useRef(null); //persistent box created for the user info, name and color. stable container for this user's identity
+  const decorations = useRef([]); //persistent box created for the cursor decorations in the editor
 
   if (!ydoc.current) {
     ydoc.current = new Y.Doc(); //created the yjs doc and stored it in the ref box. object created
@@ -39,6 +40,7 @@ function CodeEditor() {
     user.current = { name: username, color: color }; //store em in the user ref
   }
   console.log("Current user:", user.current);
+
   // publish local user identity to awareness (run once)
   if (awareness.current && !awareness.current.getLocalState()?.user) {
     awareness.current.setLocalStateField("user", {
@@ -65,31 +67,40 @@ function CodeEditor() {
       defaultLanguage="javascript"
       defaultValue={content}
       theme="vs-dark"
-      onMount={(editor) => {
+      onMount={(editor, monaco) => {
         const model = editor.getModel();
-
+        // ---- Helper: offset → Monaco position ----
+        const offsetToPosition = (offset) => {
+          return model.getPositionAt(offset);
+        };
         // ---- Monaco → Yjs ----
         const disposable = model.onDidChangeContent((event) => {
           //this just listens for a change in the monaco editor
           if (applyingRemoteUpdate.current) return; //
 
-          event.changes.forEach((change) => {
-            const index = model.getOffsetAt(change.range.getStartPosition());
+          ydoc.current.transact(() => {
+            //wrap the changes in a yjs transaction to batch them together and optimize performance
+            const reverseChanges = [...event.changes].reverse(); //reverse the changes to apply them from the end of the document to the beginning, to avoid messing up the indices
 
-            if (change.rangeLength > 0) {
-              ytext.current.delete(index, change.rangeLength);
-            }
+            reverseChanges.forEach((change) => {
+              const index = model.getOffsetAt(change.range.getStartPosition());
 
-            if (change.text.length > 0) {
-              ytext.current.insert(index, change.text);
-            }
+              if (change.rangeLength > 0) {
+                ytext.current.delete(index, change.rangeLength);
+              }
 
-            console.log("Y.Text now:", ytext.current.toString());
+              if (change.text.length > 0) {
+                ytext.current.insert(index, change.text);
+              }
+
+              console.log("Y.Text now:", ytext.current.toString());
+            });
           });
         });
 
         // ---- Yjs → Monaco ----
         const yObserver = () => {
+          const selection = editor.getSelection();
           const yValue = ytext.current.toString();
           const editorValue = model.getValue();
 
@@ -107,16 +118,78 @@ function CodeEditor() {
             ],
             () => null,
           );
-
+          if (selection) {
+            editor.setSelection(selection);
+          }
           applyingRemoteUpdate.current = false;
         };
 
         ytext.current.observe(yObserver);
 
+        // ---- Cursor → Awareness (LOCAL USER CURSOR BROADCAST) ----
+        const cursorDisposable = editor.onDidChangeCursorSelection(() => {
+          const selection = editor.getSelection();
+          if (!selection) return;
+
+          const startIndex = model.getOffsetAt(selection.getStartPosition());
+          const endIndex = model.getOffsetAt(selection.getEndPosition());
+
+          awareness.current.setLocalStateField("cursor", {
+            anchor: startIndex,
+            head: endIndex,
+          });
+
+          console.log("Cursor broadcast:", { startIndex, endIndex });
+        });
+
+        const awarenessListener = awareness.current.on("change", () => {
+          const states = awareness.current.getStates();
+
+          const newDecorations = [];
+
+          states.forEach((state, clientId) => {
+            // ❌ skip self
+            if (clientId === awareness.current.clientID) return;
+            if (!state.cursor) return;
+
+            const { anchor, head } = state.cursor;
+            const userInfo = state.user || {
+              name: "unknown",
+              color: "#ff0000",
+            };
+
+            const startPos = offsetToPosition(anchor);
+            const endPos = offsetToPosition(head);
+
+            newDecorations.push({
+              range: new monaco.Range(
+                startPos.lineNumber,
+                startPos.column,
+                endPos.lineNumber,
+                endPos.column,
+              ),
+              options: {
+                className: "remote-selection",
+                afterContentClassName: "remote-cursor",
+                stickiness: 1,
+                inlineClassName: undefined,
+                hoverMessage: { value: userInfo.name },
+              },
+            });
+          });
+
+          decorations.current = editor.deltaDecorations(
+            decorations.current,
+            newDecorations,
+          );
+        });
+
         // ---- Cleanup ----
         editor.onDidDispose(() => {
           disposable.dispose();
           ytext.current.unobserve(yObserver);
+          cursorDisposable.dispose();
+          awarenessListener();
         });
       }}
     />
