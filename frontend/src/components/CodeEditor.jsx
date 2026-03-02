@@ -2,7 +2,7 @@
 "use client"; //this is a client only component
 import Editor from "@monaco-editor/react";
 import * as Y from "yjs"; //for the yjs doc
-import { useRef } from "react"; //for the persistent boxes to store the yjs doc, text, and observer flag
+import { useRef, useState } from "react"; //for the persistent boxes to store the yjs doc, text, and observer flag
 import { WebsocketProvider } from "y-websocket"; //for the websocket provider to sync the yjs doc with the server
 
 function CodeEditor() {
@@ -13,6 +13,7 @@ function CodeEditor() {
   const awareness = useRef(null); //persistent box created for the yjs awareness, cursors and presence
   const user = useRef(null); //persistent box created for the user info, name and color. stable container for this user's identity
   const decorations = useRef([]); //persistent box created for the cursor decorations in the editor
+  const [onlineCount, setOnlineCount] = useState(1);
 
   if (!ydoc.current) {
     ydoc.current = new Y.Doc(); //created the yjs doc and stored it in the ref box. object created
@@ -62,137 +63,167 @@ function CodeEditor() {
   const content = ytext.current.toString(); //This reads the current value of Y.Text as a string
 
   return (
-    <Editor
-      height="400vh"
-      defaultLanguage="javascript"
-      defaultValue={content}
-      theme="vs-dark"
-      onMount={(editor, monaco) => {
-        const model = editor.getModel();
-        // ---- Helper: offset → Monaco position ----
-        const offsetToPosition = (offset) => {
-          return model.getPositionAt(offset);
-        };
-        // ---- Monaco → Yjs ----
-        const disposable = model.onDidChangeContent((event) => {
-          //this just listens for a change in the monaco editor
-          if (applyingRemoteUpdate.current) return; //
+    <>
+      {/* ---- Presence UI ---- */}
+      <div style={{ padding: 8, fontSize: 14 }}>Online: {onlineCount}</div>
 
-          ydoc.current.transact(() => {
-            //wrap the changes in a yjs transaction to batch them together and optimize performance
-            const reverseChanges = [...event.changes].reverse(); //reverse the changes to apply them from the end of the document to the beginning, to avoid messing up the indices
+      <Editor
+        height="400vh"
+        defaultLanguage="javascript"
+        defaultValue={content}
+        theme="vs-dark"
+        onMount={(editor, monaco) => {
+          const model = editor.getModel();
 
-            reverseChanges.forEach((change) => {
-              const index = model.getOffsetAt(change.range.getStartPosition());
+          // ---- Helper: offset → Monaco position ----
+          const offsetToPosition = (offset) => {
+            return model.getPositionAt(offset);
+          };
 
-              if (change.rangeLength > 0) {
-                ytext.current.delete(index, change.rangeLength);
-              }
+          // ---- Monaco → Yjs ----
+          const disposable = model.onDidChangeContent((event) => {
+            //this just listens for a change in the monaco editor
+            if (applyingRemoteUpdate.current) return; //
 
-              if (change.text.length > 0) {
-                ytext.current.insert(index, change.text);
-              }
+            ydoc.current.transact(() => {
+              //wrap the changes in a yjs transaction to batch them together and optimize performance
+              const reverseChanges = [...event.changes].reverse(); //reverse the changes to apply them from the end of the document to the beginning, to avoid messing up the indices
 
-              console.log("Y.Text now:", ytext.current.toString());
-            });
-          });
-        });
+              reverseChanges.forEach((change) => {
+                const index = model.getOffsetAt(
+                  change.range.getStartPosition(),
+                );
 
-        // ---- Yjs → Monaco ----
-        const yObserver = () => {
-          const selection = editor.getSelection();
-          const yValue = ytext.current.toString();
-          const editorValue = model.getValue();
+                if (change.rangeLength > 0) {
+                  ytext.current.delete(index, change.rangeLength);
+                }
 
-          if (yValue === editorValue) return; //to see if the change is local or remote. if local then the yValue and editorValue will be the same, so we can skip the update
+                if (change.text.length > 0) {
+                  ytext.current.insert(index, change.text);
+                }
 
-          applyingRemoteUpdate.current = true;
-
-          model.pushEditOperations(
-            [],
-            [
-              {
-                range: model.getFullModelRange(),
-                text: yValue,
-              },
-            ],
-            () => null,
-          );
-          if (selection) {
-            editor.setSelection(selection);
-          }
-          applyingRemoteUpdate.current = false;
-        };
-
-        ytext.current.observe(yObserver);
-
-        // ---- Cursor → Awareness (LOCAL USER CURSOR BROADCAST) ----
-        const cursorDisposable = editor.onDidChangeCursorSelection(() => {
-          const selection = editor.getSelection();
-          if (!selection) return;
-
-          const startIndex = model.getOffsetAt(selection.getStartPosition());
-          const endIndex = model.getOffsetAt(selection.getEndPosition());
-
-          awareness.current.setLocalStateField("cursor", {
-            anchor: startIndex,
-            head: endIndex,
-          });
-
-          console.log("Cursor broadcast:", { startIndex, endIndex });
-        });
-
-        const awarenessListener = awareness.current.on("change", () => {
-          const states = awareness.current.getStates();
-
-          const newDecorations = [];
-
-          states.forEach((state, clientId) => {
-            // ❌ skip self
-            if (clientId === awareness.current.clientID) return;
-            if (!state.cursor) return;
-
-            const { anchor, head } = state.cursor;
-            const userInfo = state.user || {
-              name: "unknown",
-              color: "#ff0000",
-            };
-
-            const startPos = offsetToPosition(anchor);
-            const endPos = offsetToPosition(head);
-
-            newDecorations.push({
-              range: new monaco.Range(
-                startPos.lineNumber,
-                startPos.column,
-                endPos.lineNumber,
-                endPos.column,
-              ),
-              options: {
-                className: "remote-selection",
-                afterContentClassName: "remote-cursor",
-                stickiness: 1,
-                inlineClassName: undefined,
-                hoverMessage: { value: userInfo.name },
-              },
+                console.log("Y.Text now:", ytext.current.toString());
+              });
             });
           });
 
-          decorations.current = editor.deltaDecorations(
-            decorations.current,
-            newDecorations,
-          );
-        });
+          // ---- Yjs → Monaco ----
+          const yObserver = () => {
+            const selection = editor.getSelection();
+            const yValue = ytext.current.toString();
+            const editorValue = model.getValue();
 
-        // ---- Cleanup ----
-        editor.onDidDispose(() => {
-          disposable.dispose();
-          ytext.current.unobserve(yObserver);
-          cursorDisposable.dispose();
-          awarenessListener();
-        });
-      }}
-    />
+            if (yValue === editorValue) return; //to see if the change is local or remote. if local then the yValue and editorValue will be the same, so we can skip the update
+
+            applyingRemoteUpdate.current = true;
+
+            model.pushEditOperations(
+              [],
+              [
+                {
+                  range: model.getFullModelRange(),
+                  text: yValue,
+                },
+              ],
+              () => null,
+            );
+            if (selection) {
+              editor.setSelection(selection);
+            }
+            applyingRemoteUpdate.current = false;
+          };
+
+          ytext.current.observe(yObserver);
+
+          // ---- Cursor → Awareness (LOCAL USER CURSOR BROADCAST) ----
+          const cursorDisposable = editor.onDidChangeCursorSelection(() => {
+            const selection = editor.getSelection();
+            if (!selection) return;
+
+            const startIndex = model.getOffsetAt(selection.getStartPosition());
+            const endIndex = model.getOffsetAt(selection.getEndPosition());
+
+            awareness.current.setLocalStateField("cursor", {
+              anchor: startIndex,
+              head: endIndex,
+            });
+
+            console.log("Cursor broadcast:", { startIndex, endIndex });
+          });
+
+          // ---- Awareness listener (REMOTE CURSORS + PRESENCE) ----
+          const awarenessListener = awareness.current.on("change", () => {
+            const states = awareness.current.getStates();
+
+            // ✅ update presence count
+            setOnlineCount(states.size);
+
+            const newDecorations = [];
+
+            states.forEach((state, clientId) => {
+              // ❌ skip self
+              if (clientId === awareness.current.clientID) return;
+              if (!state.cursor) return;
+
+              const { anchor, head } = state.cursor;
+              const userInfo = state.user || {
+                name: "unknown",
+                color: "#ff0000",
+              };
+
+              const startPos = offsetToPosition(anchor);
+              const endPos = offsetToPosition(head);
+
+              // 🔥 dynamic cursor class per user
+              const cursorClass = `remote-cursor-${clientId}`;
+
+              // inject style once
+              if (!document.getElementById(cursorClass)) {
+                const style = document.createElement("style");
+                style.id = cursorClass;
+                style.innerHTML = `
+                  .${cursorClass} {
+                    border-left: 2px solid ${userInfo.color};
+                    margin-left: -1px;
+                    pointer-events: none;
+                  }
+                `;
+                document.head.appendChild(style);
+              }
+
+              newDecorations.push({
+                range: new monaco.Range(
+                  startPos.lineNumber,
+                  startPos.column,
+                  endPos.lineNumber,
+                  endPos.column,
+                ),
+                options: {
+                  className: "remote-selection",
+                  afterContentClassName: cursorClass,
+                  stickiness: 1,
+                  inlineClassName: undefined,
+                  hoverMessage: { value: userInfo.name },
+                },
+              });
+            });
+
+            decorations.current = editor.deltaDecorations(
+              decorations.current,
+              newDecorations,
+            );
+          });
+
+          // ---- Cleanup ----
+          editor.onDidDispose(() => {
+            disposable.dispose();
+            ytext.current.unobserve(yObserver);
+            cursorDisposable.dispose();
+            awarenessListener();
+          });
+        }}
+      />
+    </>
   );
 }
 
