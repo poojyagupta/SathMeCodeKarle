@@ -45,6 +45,11 @@ function CodeEditor() {
     filesRef.current.set("main.js", "file:main.js");
     console.log("main.js registered");
   }
+  const mainText = ydoc.current.getText("file:main.js");
+  console.log("main.js Y.Text ready:", mainText);
+  if (typeof window !== "undefined") {
+    window.mainText = mainText;
+  }
   if (!user.current) {
     const username = "user" + Math.floor(Math.random() * 1000); //generate random username
     const color =
