@@ -10,6 +10,7 @@ function CodeEditor() {
   const ytext = useRef(null); //persistent box created for the yjs text
   const applyingRemoteUpdate = useRef(false); //persistent box created for the yjs observer
   const provider = useRef(null); //persistent box created for the websocket provider
+  const filesRef = useRef(null); // to store the file system structure in the future, for now it's just a placeholder
   const awareness = useRef(null); //persistent box created for the yjs awareness, cursors and presence
   const user = useRef(null); //persistent box created for the user info, name and color. stable container for this user's identity
   const decorations = useRef([]); //persistent box created for the cursor decorations in the editor
@@ -31,6 +32,14 @@ function CodeEditor() {
     console.log("Provider created");
   }
 
+  if (!filesRef.current) {
+    filesRef.current = ydoc.current.getMap("files"); //created a yjs map to store the file system structure in the future, and stored it in the ref box
+    console.log("files map created");
+
+    if (typeof window !== "undefined") {
+      window.files = filesRef.current; //expose it to the window for debugging
+    }
+  }
   if (!user.current) {
     const username = "user" + Math.floor(Math.random() * 1000); //generate random username
     const color =
