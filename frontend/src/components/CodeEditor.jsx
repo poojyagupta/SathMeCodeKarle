@@ -40,6 +40,11 @@ function CodeEditor() {
       window.files = filesRef.current; //expose it to the window for debugging
     }
   }
+
+  if (!filesRef.current.has("main.js")) {
+    filesRef.current.set("main.js", "file:main.js");
+    console.log("main.js registered");
+  }
   if (!user.current) {
     const username = "user" + Math.floor(Math.random() * 1000); //generate random username
     const color =
