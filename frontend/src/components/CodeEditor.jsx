@@ -75,8 +75,9 @@ function CodeEditor() {
   }
 
   if (!ytext.current) {
-    ytext.current = ydoc.current.getText("editor"); //created the yjs text and stored it in the ref box
-    console.log("Y.text created");
+    const fileKey = filesRef.current.get("main.js"); // "file:main.js"
+    ytext.current = ydoc.current.getText(fileKey);
+    console.log("Editor attached to:", fileKey);
   }
 
   const content = ytext.current.toString(); //This reads the current value of Y.Text as a string
