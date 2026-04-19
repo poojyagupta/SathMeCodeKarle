@@ -2,7 +2,7 @@
 "use client"; //this is a client only component
 import Editor from "@monaco-editor/react";
 import * as Y from "yjs"; //for the yjs doc
-import { useRef, useState } from "react"; //for the persistent boxes to store the yjs doc, text, and observer flag
+import { useRef, useState, useEffect } from "react"; //for the persistent boxes to store the yjs doc, text, and observer flag
 import { WebsocketProvider } from "y-websocket"; //for the websocket provider to sync the yjs doc with the server
 
 function CodeEditor() {
@@ -15,6 +15,13 @@ function CodeEditor() {
   const user = useRef(null); //persistent box created for the user info, name and color. stable container for this user's identity
   const decorations = useRef([]); //persistent box created for the cursor decorations in the editor
   const [onlineCount, setOnlineCount] = useState(1);
+  const MonacoBindingRef = useRef(null); // to store the MonacoBinding instance
+
+  useEffect(() => {
+    import("y-monaco").then((mod) => {
+      MonacoBindingRef.current = mod.MonacoBinding;
+    });
+  }, []);
 
   if (!ydoc.current) {
     ydoc.current = new Y.Doc(); //created the yjs doc and stored it in the ref box. object created
@@ -90,70 +97,27 @@ function CodeEditor() {
       <Editor
         height="400vh"
         defaultLanguage="javascript"
-        defaultValue={content}
+        defaultValue=""
         theme="vs-dark"
         onMount={(editor, monaco) => {
           const model = editor.getModel();
 
+          if (!MonacoBindingRef.current) return;
+
+          const binding = new MonacoBindingRef.current(
+            ytext.current,
+            model,
+            new Set([editor]),
+            awareness.current,
+          );
           // ---- Helper: offset → Monaco position ----
           const offsetToPosition = (offset) => {
             return model.getPositionAt(offset);
           };
 
           // ---- Monaco → Yjs ----
-          const disposable = model.onDidChangeContent((event) => {
-            //this just listens for a change in the monaco editor
-            if (applyingRemoteUpdate.current) return; //
-
-            ydoc.current.transact(() => {
-              //wrap the changes in a yjs transaction to batch them together and optimize performance
-              const reverseChanges = [...event.changes].reverse(); //reverse the changes to apply them from the end of the document to the beginning, to avoid messing up the indices
-
-              reverseChanges.forEach((change) => {
-                const index = model.getOffsetAt(
-                  change.range.getStartPosition(),
-                );
-
-                if (change.rangeLength > 0) {
-                  ytext.current.delete(index, change.rangeLength);
-                }
-
-                if (change.text.length > 0) {
-                  ytext.current.insert(index, change.text);
-                }
-
-                console.log("Y.Text now:", ytext.current.toString());
-              });
-            });
-          });
 
           // ---- Yjs → Monaco ----
-          const yObserver = () => {
-            const selection = editor.getSelection();
-            const yValue = ytext.current.toString();
-            const editorValue = model.getValue();
-
-            if (yValue === editorValue) return; //to see if the change is local or remote. if local then the yValue and editorValue will be the same, so we can skip the update
-
-            applyingRemoteUpdate.current = true;
-
-            model.pushEditOperations(
-              [],
-              [
-                {
-                  range: model.getFullModelRange(),
-                  text: yValue,
-                },
-              ],
-              () => null,
-            );
-            if (selection) {
-              editor.setSelection(selection);
-            }
-            applyingRemoteUpdate.current = false;
-          };
-
-          ytext.current.observe(yObserver);
 
           // ---- Cursor → Awareness (LOCAL USER CURSOR BROADCAST) ----
           const cursorDisposable = editor.onDidChangeCursorSelection(() => {
@@ -236,8 +200,7 @@ function CodeEditor() {
 
           // ---- Cleanup ----
           editor.onDidDispose(() => {
-            disposable.dispose();
-            ytext.current.unobserve(yObserver);
+            binding.destroy();
             cursorDisposable.dispose();
             awarenessListener();
           });
