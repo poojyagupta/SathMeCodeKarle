@@ -36,6 +36,92 @@ export default function Page() {
     return <div style={{ padding: "20px" }}>Loading project...</div>;
   }
 
+  const handleRenameFile = (oldName) => {
+    if (!project) return;
+
+    const newName = prompt("Enter new file name:", oldName);
+    if (!newName || newName === oldName) return;
+
+    // ❌ avoid duplicate names
+    if (project.files[newName]) {
+      alert("File already exists");
+      return;
+    }
+
+    const updatedFiles = { ...project.files };
+
+    // 🔥 IMPORTANT: preserve Yjs key
+    updatedFiles[newName] = updatedFiles[oldName];
+    delete updatedFiles[oldName];
+
+    const updatedProject = {
+      ...project,
+      files: updatedFiles,
+    };
+
+    setProject(updatedProject);
+    socketRef.current.emit("project-update", updatedProject);
+
+    // 🔥 if renamed file is open
+    if (currentFile === oldName) {
+      setCurrentFile(newName);
+    }
+  };
+  const handleDeleteFile = (fileName) => {
+    if (!project) return;
+
+    const updatedFiles = { ...project.files };
+    delete updatedFiles[fileName];
+
+    // 🔥 Edge case: if current file deleted
+    let newCurrentFile = currentFile;
+
+    if (fileName === currentFile) {
+      const remainingFiles = Object.keys(updatedFiles);
+      newCurrentFile = remainingFiles.length > 0 ? remainingFiles[0] : null;
+    }
+
+    const updatedProject = {
+      ...project,
+      files: updatedFiles,
+    };
+
+    const handleRenameFile = (oldName) => {
+      if (!project) return;
+
+      const newName = prompt("Enter new file name:", oldName);
+      if (!newName || newName === oldName) return;
+
+      // ❌ avoid duplicate names
+      if (project.files[newName]) {
+        alert("File already exists");
+        return;
+      }
+
+      const updatedFiles = { ...project.files };
+
+      // 🔥 IMPORTANT: preserve Yjs key
+      updatedFiles[newName] = updatedFiles[oldName];
+      delete updatedFiles[oldName];
+
+      const updatedProject = {
+        ...project,
+        files: updatedFiles,
+      };
+
+      setProject(updatedProject);
+      socketRef.current.emit("project-update", updatedProject);
+
+      // 🔥 if renamed file is open
+      if (currentFile === oldName) {
+        setCurrentFile(newName);
+      }
+    };
+    setProject(updatedProject);
+    socketRef.current.emit("project-update", updatedProject);
+
+    setCurrentFile(newCurrentFile);
+  };
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       {/* 📁 FILE TREE */}
@@ -78,14 +164,27 @@ export default function Page() {
         {Object.keys(project.files).map((file) => (
           <div
             key={file}
-            onClick={() => setCurrentFile(file)}
             style={{
+              display: "flex",
+              justifyContent: "space-between",
               padding: "5px",
-              cursor: "pointer",
               background: currentFile === file ? "#eee" : "transparent",
             }}
           >
-            {file}
+            <span
+              style={{ cursor: "pointer" }}
+              onClick={() => setCurrentFile(file)}
+            >
+              {file}
+            </span>
+
+            <div>
+              {/* ✏️ Rename */}
+              <button onClick={() => handleRenameFile(file)}>✏️</button>
+
+              {/* ❌ Delete */}
+              <button onClick={() => handleDeleteFile(file)}>x</button>
+            </div>
           </div>
         ))}
       </div>
