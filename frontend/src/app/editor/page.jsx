@@ -13,8 +13,11 @@ export default function Page() {
   // 🔹 Currently open file
   const [currentFile, setCurrentFile] = useState("package.json");
   const [logs, setLogs] = useState([]);
+  const [activeTab, setActiveTab] = useState("terminal"); // or "preview"
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const terminalRef = useRef(null);
 
-  // 🔥 CONNECT SOCKET
   useEffect(() => {
     socketRef.current = io("http://localhost:5000");
 
@@ -161,10 +164,14 @@ export default function Page() {
               },
               body: JSON.stringify({ files }),
             });
+            setPreviewUrl("http://localhost:3001");
+            setRefreshKey((prev) => prev + 1);
+            setActiveTab("preview"); // 🔥 auto switch to preview
           }}
         >
           ▶ Run Project
         </button>
+
         <h4>Files</h4>
 
         {/* 🔥 CREATE FILE INPUT */}
@@ -230,19 +237,42 @@ export default function Page() {
         </div>
 
         {/* 🔥 TERMINAL */}
-        <div
-          style={{
-            height: "200px",
-            background: "black",
-            color: "lime",
-            padding: "10px",
-            overflowY: "auto",
-            fontFamily: "monospace",
-          }}
-        >
-          {logs.map((log, index) => (
-            <div key={index}>{log}</div>
-          ))}
+        <div style={{ height: "250px", borderTop: "2px solid #333" }}>
+          {/* 🔥 TAB HEADER */}
+          <div style={{ display: "flex", background: "#1e1e1e" }}>
+            <button
+              onClick={() => setActiveTab("terminal")}
+              style={{
+                flex: 1,
+                padding: "10px",
+                background: activeTab === "terminal" ? "#333" : "#1e1e1e",
+                color: "white",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              🖥 Terminal
+            </button>
+          </div>
+
+          {/* 🖥 TERMINAL */}
+          {activeTab === "terminal" && (
+            <div
+              ref={terminalRef}
+              style={{
+                height: "100%",
+                background: "black",
+                color: "#00ff00",
+                padding: "10px",
+                overflowY: "auto",
+                fontFamily: "monospace",
+              }}
+            >
+              {logs.map((log, index) => (
+                <div key={index}>{log}</div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
