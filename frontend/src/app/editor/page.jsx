@@ -12,6 +12,7 @@ export default function Page() {
 
   // 🔹 Currently open file
   const [currentFile, setCurrentFile] = useState("package.json");
+  const [logs, setLogs] = useState([]);
 
   // 🔥 CONNECT SOCKET
   useEffect(() => {
@@ -27,7 +28,10 @@ export default function Page() {
     });
 
     socketRef.current.emit("request-project");
-
+    socketRef.current.on("terminal-output", (data) => {
+      console.log("FRONTEND RECEIVED:", data); // 🔥 ADD THIS
+      setLogs((prev) => [...prev, data]);
+    });
     return () => socketRef.current.disconnect();
   }, []);
 
@@ -91,6 +95,7 @@ export default function Page() {
 
     setCurrentFile(newCurrentFile);
   };
+
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       {/* 📁 FILE TREE */}
@@ -148,7 +153,7 @@ export default function Page() {
             }
 
             console.log("Sending files:", files);
-
+            setLogs([]);
             await fetch("http://localhost:5000/run-project", {
               method: "POST",
               headers: {
@@ -217,8 +222,29 @@ export default function Page() {
         ))}
       </div>
 
-      {/* 🧠 EDITOR */}
-      <CodeEditor key={currentFile} currentFile={currentFile} />
+      {/* 🔥 RIGHT SIDE (EDITOR + TERMINAL) */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        {/* 🧠 EDITOR */}
+        <div style={{ flex: 1 }}>
+          <CodeEditor key={currentFile} currentFile={currentFile} />
+        </div>
+
+        {/* 🔥 TERMINAL */}
+        <div
+          style={{
+            height: "200px",
+            background: "black",
+            color: "lime",
+            padding: "10px",
+            overflowY: "auto",
+            fontFamily: "monospace",
+          }}
+        >
+          {logs.map((log, index) => (
+            <div key={index}>{log}</div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

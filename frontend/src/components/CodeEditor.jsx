@@ -123,7 +123,7 @@ function CodeEditor({ currentFile }) {
       <div style={{ padding: 8, fontSize: 14 }}>Online: {onlineCount}</div>
 
       <Editor
-        height="400vh"
+        height="70vh"
         language={getLanguage(currentFile)}
         defaultValue=""
         theme="vs-dark"

@@ -96,14 +96,19 @@ app.post("/run-project", (req, res) => {
 
   // 🔥 stream output LIVE
   currentProcess.stdout.on("data", (data) => {
-    console.log("📦", data.toString());
-  });
+    const message = data.toString();
 
+    console.log("📦 BACKEND LOG:", message); // 🔥 ADD THIS
+
+    io.emit("terminal-output", message);
+  });
   currentProcess.stderr.on("data", (data) => {
-    console.error("❌", data.toString());
-  });
+    const message = data.toString();
+    console.error("❌", message);
 
-  res.json({ status: "project running" });
+    // 🔥 SEND TO FRONTEND
+    io.emit("terminal-output", message);
+  });
 });
 // Run on DIFFERENT PORT than Yjs
 server.listen(5000, () => {
