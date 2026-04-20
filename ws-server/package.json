@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@y/websocket-server": "^0.1.1"
+    "@y/websocket-server": "^0.1.1",
+    "socket.io": "^4.8.3"
   }
 }
