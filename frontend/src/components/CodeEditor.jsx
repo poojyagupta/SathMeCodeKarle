@@ -5,7 +5,7 @@ import * as Y from "yjs"; //for the yjs doc
 import { useRef, useState, useEffect } from "react"; //for the persistent boxes to store the yjs doc, text, and observer flag
 import { WebsocketProvider } from "y-websocket"; //for the websocket provider to sync the yjs doc with the server
 
-function CodeEditor() {
+function CodeEditor({ currentFile }) {
   const ydoc = useRef(null); //persistent box created for the yjs doc
   const ytext = useRef(null); //persistent box created for the yjs text
   const applyingRemoteUpdate = useRef(false); //persistent box created for the yjs observer
@@ -16,6 +16,7 @@ function CodeEditor() {
   const decorations = useRef([]); //persistent box created for the cursor decorations in the editor
   const [onlineCount, setOnlineCount] = useState(1);
   const MonacoBindingRef = useRef(null); // to store the MonacoBinding instance
+  const awarenessAttached = useRef(false);
 
   useEffect(() => {
     import("y-monaco").then((mod) => {
@@ -48,14 +49,20 @@ function CodeEditor() {
     }
   }
 
-  if (!filesRef.current.has("main.js")) {
-    filesRef.current.set("main.js", "file:main.js");
-    console.log("main.js registered");
+  const fileKey = "file:" + currentFile;
+
+  if (!filesRef.current.has(currentFile)) {
+    filesRef.current.set(currentFile, fileKey);
+    console.log(`${currentFile} registered`);
   }
-  const mainText = ydoc.current.getText("file:main.js");
-  console.log("main.js Y.Text ready:", mainText);
+
+  // 🔥 THIS IS THE KEY FIX
+  ytext.current = ydoc.current.getText(fileKey);
+
+  console.log(`${currentFile} Y.Text ready:`, ytext.current);
+
   if (typeof window !== "undefined") {
-    window.mainText = mainText;
+    window.mainText = ytext.current;
   }
   if (!user.current) {
     const username = "user" + Math.floor(Math.random() * 1000); //generate random username
@@ -136,11 +143,12 @@ function CodeEditor() {
           });
 
           // ---- Awareness listener (REMOTE CURSORS + PRESENCE) ----
-          const awarenessListener = awareness.current.on("change", () => {
+          const handleAwarenessChange = () => {
             const states = awareness.current.getStates();
 
-            // ✅ update presence count
-            setOnlineCount(states.size);
+            queueMicrotask(() => {
+              setOnlineCount(states.size);
+            });
 
             const newDecorations = [];
 
@@ -158,7 +166,6 @@ function CodeEditor() {
               const startPos = offsetToPosition(anchor);
               const endPos = offsetToPosition(head);
 
-              // 🔥 dynamic cursor class per user
               const cursorClass = `remote-cursor-${clientId}`;
 
               // inject style once
@@ -166,12 +173,12 @@ function CodeEditor() {
                 const style = document.createElement("style");
                 style.id = cursorClass;
                 style.innerHTML = `
-                  .${cursorClass} {
-                    border-left: 2px solid ${userInfo.color};
-                    margin-left: -1px;
-                    pointer-events: none;
-                  }
-                `;
+        .${cursorClass} {
+          border-left: 2px solid ${userInfo.color};
+          margin-left: -1px;
+          pointer-events: none;
+        }
+      `;
                 document.head.appendChild(style);
               }
 
@@ -185,8 +192,6 @@ function CodeEditor() {
                 options: {
                   className: "remote-selection",
                   afterContentClassName: cursorClass,
-                  stickiness: 1,
-                  inlineClassName: undefined,
                   hoverMessage: { value: userInfo.name },
                 },
               });
@@ -196,13 +201,28 @@ function CodeEditor() {
               decorations.current,
               newDecorations,
             );
-          });
+          };
 
-          // ---- Cleanup ----
+          if (!awarenessAttached.current) {
+            awareness.current.on("change", handleAwarenessChange);
+            awarenessAttached.current = true;
+          }
+
           editor.onDidDispose(() => {
-            binding.destroy();
-            cursorDisposable.dispose();
-            awarenessListener();
+            try {
+              cursorDisposable.dispose();
+            } catch (e) {
+              console.warn("Cursor cleanup error:", e);
+            }
+
+            if (awarenessAttached.current) {
+              try {
+                awareness.current.off("change", handleAwarenessChange);
+              } catch (e) {
+                console.warn("Awareness off error:", e);
+              }
+              awarenessAttached.current = false;
+            }
           });
         }}
       />
