@@ -1,0 +1,8 @@
+{
+  "projectId": "abc",
+  "files": {
+    "package.json": "file:package.json",
+    "src/index.js": "file:src/index.js",
+    "app.js": "file:app.js"
+  }
+}
