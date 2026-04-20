@@ -95,7 +95,28 @@ function CodeEditor({ currentFile }) {
   }
 
   const content = ytext.current.toString(); //This reads the current value of Y.Text as a string
+  const getAllFilesContent = () => {
+    const filesContent = {};
 
+    filesRef.current.forEach((key, fileName) => {
+      const ytext = ydoc.current.getText(key);
+      filesContent[fileName] = ytext.toString();
+    });
+
+    return filesContent;
+  };
+
+  if (typeof window !== "undefined") {
+    window.getProjectFiles = getAllFilesContent;
+  }
+
+  const getLanguage = (fileName) => {
+    if (fileName.endsWith(".js")) return "javascript";
+    if (fileName.endsWith(".html")) return "html";
+    if (fileName.endsWith(".json")) return "json";
+    if (fileName.endsWith(".css")) return "css";
+    return "plaintext";
+  };
   return (
     <>
       {/* ---- Presence UI ---- */}
@@ -103,7 +124,7 @@ function CodeEditor({ currentFile }) {
 
       <Editor
         height="400vh"
-        defaultLanguage="javascript"
+        language={getLanguage(currentFile)}
         defaultValue=""
         theme="vs-dark"
         onMount={(editor, monaco) => {

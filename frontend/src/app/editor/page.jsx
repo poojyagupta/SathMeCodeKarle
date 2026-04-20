@@ -86,37 +86,6 @@ export default function Page() {
       files: updatedFiles,
     };
 
-    const handleRenameFile = (oldName) => {
-      if (!project) return;
-
-      const newName = prompt("Enter new file name:", oldName);
-      if (!newName || newName === oldName) return;
-
-      // ❌ avoid duplicate names
-      if (project.files[newName]) {
-        alert("File already exists");
-        return;
-      }
-
-      const updatedFiles = { ...project.files };
-
-      // 🔥 IMPORTANT: preserve Yjs key
-      updatedFiles[newName] = updatedFiles[oldName];
-      delete updatedFiles[oldName];
-
-      const updatedProject = {
-        ...project,
-        files: updatedFiles,
-      };
-
-      setProject(updatedProject);
-      socketRef.current.emit("project-update", updatedProject);
-
-      // 🔥 if renamed file is open
-      if (currentFile === oldName) {
-        setCurrentFile(newName);
-      }
-    };
     setProject(updatedProject);
     socketRef.current.emit("project-update", updatedProject);
 
@@ -132,6 +101,65 @@ export default function Page() {
           padding: "10px",
         }}
       >
+        <button
+          onClick={async () => {
+            if (!window.getProjectFiles) return;
+
+            const allFiles = window.getProjectFiles();
+
+            // 🔥 ONLY keep files that exist in project structure
+            const files = {};
+
+            Object.keys(project.files).forEach((fileName) => {
+              files[fileName] = allFiles[fileName] || "";
+            });
+
+            const hasHTML = Object.keys(files).some((file) =>
+              file.endsWith(".html"),
+            );
+
+            // ✅ ONLY if package.json DOES NOT EXIST AT ALL
+            if (!files["package.json"]) {
+              if (hasHTML) {
+                files["package.json"] = JSON.stringify(
+                  {
+                    name: "demo",
+                    version: "1.0.0",
+                    scripts: {
+                      dev: "npx serve . -l 3001",
+                    },
+                  },
+                  null,
+                  2,
+                );
+              } else {
+                files["package.json"] = JSON.stringify(
+                  {
+                    name: "demo",
+                    version: "1.0.0",
+                    scripts: {
+                      dev: "node src/index.js",
+                    },
+                  },
+                  null,
+                  2,
+                );
+              }
+            }
+
+            console.log("Sending files:", files);
+
+            await fetch("http://localhost:5000/run-project", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ files }),
+            });
+          }}
+        >
+          ▶ Run Project
+        </button>
         <h4>Files</h4>
 
         {/* 🔥 CREATE FILE INPUT */}
