@@ -5,10 +5,18 @@ function extractFunctions(code) {
   let match;
 
   while ((match = regex.exec(code)) !== null) {
-    functions.push({
-      name: match[1],
-      body: match[2].trim(),
-    });
+    const name = match[1];
+    const body = match[2].trim();
+
+    // 🔥 STRICT FILTERS
+
+    // must have semicolon (basic completeness)
+    if (!body.includes(";")) continue;
+
+    // must NOT be too small (avoid partial typing)
+    if (body.length < 10) continue;
+
+    functions.push({ name, body });
   }
 
   return functions;

@@ -5,7 +5,7 @@ import * as Y from "yjs"; //for the yjs doc
 import { useRef, useState, useEffect } from "react"; //for the persistent boxes to store the yjs doc, text, and observer flag
 import { WebsocketProvider } from "y-websocket"; //for the websocket provider to sync the yjs doc with the server
 import { io } from "socket.io-client";
-function CodeEditor({ currentFile }) {
+function CodeEditor({ currentFile, socket }) {
   const ydoc = useRef(null); //persistent box created for the yjs doc
   const ytext = useRef(null); //persistent box created for the yjs text
   const applyingRemoteUpdate = useRef(false); //persistent box created for the yjs observer
@@ -17,17 +17,13 @@ function CodeEditor({ currentFile }) {
   const [onlineCount, setOnlineCount] = useState(1);
   const MonacoBindingRef = useRef(null); // to store the MonacoBinding instance
   const awarenessAttached = useRef(false);
-  const socketRef = useRef(null);
+
   useEffect(() => {
     import("y-monaco").then((mod) => {
       MonacoBindingRef.current = mod.MonacoBinding;
     });
   }, []);
-  useEffect(() => {
-    socketRef.current = io("http://localhost:5000");
 
-    return () => socketRef.current.disconnect();
-  }, []);
   if (!ydoc.current) {
     ydoc.current = new Y.Doc(); //created the yjs doc and stored it in the ref box. object created
     console.log("Y.doc created");
@@ -65,15 +61,21 @@ function CodeEditor({ currentFile }) {
   useEffect(() => {
     if (!ytext.current) return;
 
+    let timeout;
+
     const observer = () => {
-      const code = ytext.current.toString();
+      clearTimeout(timeout);
 
-      socketRef.current?.emit("code-change", {
-        fileName: currentFile,
-        code,
-      });
+      timeout = setTimeout(() => {
+        const code = ytext.current.toString();
 
-      console.log("🚀 Code sent:", currentFile);
+        socket?.emit("code-change", {
+          fileName: currentFile,
+          code,
+        });
+
+        console.log("🚀 Code sent (debounced):", currentFile);
+      }, 700); // wait till user stops typing
     };
 
     ytext.current.observe(observer);

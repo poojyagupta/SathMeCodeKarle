@@ -65,13 +65,18 @@ function detectConflicts(userFunctionsMap) {
   for (const fnName in functionMap) {
     const versions = functionMap[fnName];
 
-    const uniqueBodies = new Set(versions.map((v) => v.body));
+    // 🔥 UNIQUE USERS
+    const uniqueUsers = [...new Set(versions.map((v) => v.user))];
 
-    if (uniqueBodies.size > 1) {
+    // 🔥 UNIQUE BODIES
+    const uniqueBodies = [...new Set(versions.map((v) => v.body))];
+
+    // 🔥 REAL CONDITION
+    if (uniqueUsers.length > 1 && uniqueBodies.length > 1) {
       conflicts.push({
         type: "function_conflict",
         function: fnName,
-        users: versions.map((v) => v.user),
+        users: uniqueUsers,
         changes: versions,
       });
     }
@@ -100,7 +105,9 @@ io.on("connection", (socket) => {
 
     userCodeMap[socket.id][fileName] = code;
 
-    const functions = extractFunctions(code);
+    const functions = extractFunctions(code).filter(
+      (fn) => fn.body.trim() !== "",
+    );
 
     // 🔥 NEW LINE
     if (!userFunctionsMap[socket.id]) {
@@ -114,7 +121,18 @@ io.on("connection", (socket) => {
 
     if (conflicts.length > 0) {
       console.log("🚨 CONFLICT DETECTED:", conflicts);
+    } else {
+      console.log("✅ No conflict");
     }
+
+    // 🔥 ALWAYS EMIT (IMPORTANT)
+    io.emit("conflict-detected", conflicts);
+  });
+  socket.on("disconnect", () => {
+    delete userCodeMap[socket.id];
+    delete userFunctionsMap[socket.id];
+
+    console.log("❌ User disconnected:", socket.id);
   });
 });
 

@@ -17,6 +17,7 @@ export default function Page() {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const terminalRef = useRef(null);
+  const [conflicts, setConflicts] = useState([]);
 
   useEffect(() => {
     socketRef.current = io("http://localhost:5000");
@@ -34,6 +35,17 @@ export default function Page() {
     socketRef.current.on("terminal-output", (data) => {
       console.log("FRONTEND RECEIVED:", data); // 🔥 ADD THIS
       setLogs((prev) => [...prev, data]);
+    });
+
+    socketRef.current.on("conflict-detected", (data) => {
+      console.log("⚠ Conflict received:", data);
+
+      setConflicts(data);
+
+      // 🔥 AUTO CLEAR AFTER 5 SECONDS
+      setTimeout(() => {
+        setConflicts([]);
+      }, 5000);
     });
     return () => socketRef.current.disconnect();
   }, []);
@@ -233,9 +245,32 @@ export default function Page() {
       <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
         {/* 🧠 EDITOR */}
         <div style={{ flex: 1 }}>
-          <CodeEditor key={currentFile} currentFile={currentFile} />
+          <CodeEditor
+            key={currentFile}
+            currentFile={currentFile}
+            socket={socketRef.current}
+          />
         </div>
-
+        {conflicts.length > 0 && (
+          <div
+            style={{
+              background: "#ff4d4f",
+              color: "white",
+              padding: "10px",
+              fontWeight: "bold",
+            }}
+          >
+            ⚠ Conflict in function: {conflicts[0].function}
+            <br />
+            👥 Users:{" "}
+            {conflicts[0].users.map((user, index) => (
+              <span key={user + index}>
+                {user}
+                {index !== conflicts[0].users.length - 1 ? ", " : ""}
+              </span>
+            ))}
+          </div>
+        )}
         {/* 🔥 TERMINAL */}
         <div style={{ height: "250px", borderTop: "2px solid #333" }}>
           {/* 🔥 TAB HEADER */}
