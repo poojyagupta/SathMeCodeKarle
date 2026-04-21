@@ -7,6 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const cors = require("cors");
 const app = express();
+const { extractFunctions } = require("./parser");
 
 app.use(express.json());
 app.use(cors());
@@ -18,7 +19,9 @@ const io = new Server(server, {
     origin: "*",
   },
 });
-
+// 🔥 store last code per user
+const userCodeMap = {};
+const userFunctionsMap = {};
 let currentProcess = null;
 let currentProject;
 
@@ -34,6 +37,48 @@ if (fs.existsSync(DATA_PATH)) {
   };
 }
 
+function detectConflicts(userFunctionsMap) {
+  const functionMap = {};
+
+  for (const userId in userFunctionsMap) {
+    const files = userFunctionsMap[userId];
+
+    for (const fileName in files) {
+      const functions = files[fileName];
+
+      functions.forEach((fn) => {
+        if (!functionMap[fn.name]) {
+          functionMap[fn.name] = [];
+        }
+
+        functionMap[fn.name].push({
+          user: userId,
+          body: fn.body,
+          file: fileName,
+        });
+      });
+    }
+  }
+
+  const conflicts = [];
+
+  for (const fnName in functionMap) {
+    const versions = functionMap[fnName];
+
+    const uniqueBodies = new Set(versions.map((v) => v.body));
+
+    if (uniqueBodies.size > 1) {
+      conflicts.push({
+        type: "function_conflict",
+        function: fnName,
+        users: versions.map((v) => v.user),
+        changes: versions,
+      });
+    }
+  }
+
+  return conflicts;
+}
 io.on("connection", (socket) => {
   // 🔥 send project to new user
   socket.on("request-project", () => {
@@ -47,6 +92,29 @@ io.on("connection", (socket) => {
     fs.writeFileSync(DATA_PATH, JSON.stringify(project, null, 2));
 
     socket.broadcast.emit("project-update", project);
+  });
+  socket.on("code-change", ({ fileName, code }) => {
+    if (!userCodeMap[socket.id]) {
+      userCodeMap[socket.id] = {};
+    }
+
+    userCodeMap[socket.id][fileName] = code;
+
+    const functions = extractFunctions(code);
+
+    // 🔥 NEW LINE
+    if (!userFunctionsMap[socket.id]) {
+      userFunctionsMap[socket.id] = {};
+    }
+
+    userFunctionsMap[socket.id][fileName] = functions;
+
+    console.log(`🧠 Functions for ${socket.id}:`, functions);
+    const conflicts = detectConflicts(userFunctionsMap);
+
+    if (conflicts.length > 0) {
+      console.log("🚨 CONFLICT DETECTED:", conflicts);
+    }
   });
 });
 
@@ -80,13 +148,6 @@ app.post("/run-project", (req, res) => {
   // 🔥 3. RUN PROJECT (ONLY ONCE)
   const command = "npm install && npm run dev";
 
-  // 🔥 kill previous process (VERY IMPORTANT)
-  if (currentProcess) {
-    currentProcess.kill();
-  }
-
-  // 🔥 start new process
-  // 🔥 kill previous process (VERY IMPORTANT)
   if (currentProcess) {
     currentProcess.kill();
   }

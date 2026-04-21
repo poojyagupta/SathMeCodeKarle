@@ -4,7 +4,7 @@ import Editor from "@monaco-editor/react";
 import * as Y from "yjs"; //for the yjs doc
 import { useRef, useState, useEffect } from "react"; //for the persistent boxes to store the yjs doc, text, and observer flag
 import { WebsocketProvider } from "y-websocket"; //for the websocket provider to sync the yjs doc with the server
-
+import { io } from "socket.io-client";
 function CodeEditor({ currentFile }) {
   const ydoc = useRef(null); //persistent box created for the yjs doc
   const ytext = useRef(null); //persistent box created for the yjs text
@@ -17,13 +17,17 @@ function CodeEditor({ currentFile }) {
   const [onlineCount, setOnlineCount] = useState(1);
   const MonacoBindingRef = useRef(null); // to store the MonacoBinding instance
   const awarenessAttached = useRef(false);
-
+  const socketRef = useRef(null);
   useEffect(() => {
     import("y-monaco").then((mod) => {
       MonacoBindingRef.current = mod.MonacoBinding;
     });
   }, []);
+  useEffect(() => {
+    socketRef.current = io("http://localhost:5000");
 
+    return () => socketRef.current.disconnect();
+  }, []);
   if (!ydoc.current) {
     ydoc.current = new Y.Doc(); //created the yjs doc and stored it in the ref box. object created
     console.log("Y.doc created");
@@ -58,7 +62,26 @@ function CodeEditor({ currentFile }) {
 
   // 🔥 THIS IS THE KEY FIX
   ytext.current = ydoc.current.getText(fileKey);
+  useEffect(() => {
+    if (!ytext.current) return;
 
+    const observer = () => {
+      const code = ytext.current.toString();
+
+      socketRef.current?.emit("code-change", {
+        fileName: currentFile,
+        code,
+      });
+
+      console.log("🚀 Code sent:", currentFile);
+    };
+
+    ytext.current.observe(observer);
+
+    return () => {
+      ytext.current.unobserve(observer);
+    };
+  }, [currentFile]);
   console.log(`${currentFile} Y.Text ready:`, ytext.current);
 
   if (typeof window !== "undefined") {
