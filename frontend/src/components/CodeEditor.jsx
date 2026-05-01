@@ -145,7 +145,7 @@ function CodeEditor({ currentFile, socket }) {
   return (
     <>
       {/* ---- Presence UI ---- */}
-      <div style={{ padding: 8, fontSize: 14 }}>Online: {onlineCount}</div>
+      <div style={{ padding: 8, fontSize: 14 }}></div>
 
       <Editor
         height="70vh"

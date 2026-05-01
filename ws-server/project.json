@@ -1,8 +1,8 @@
 {
   "projectId": "abc",
   "files": {
-    "package.json": "file:package.json",
-    "src/index.js": "file:src/index.js",
-    "app.js": "file:app.js"
+    "package.json": "",
+    "app.js": "function a(s,b)\r\n{\r\n    return s-b;\r\n}",
+    "src/index.js": "def main():\n    print(s+b)\n\nif __name__ == \"__main__\":\n    main()\n\n\"\"\"\n\n# Solution 1\n\ndef main():\n    print(s+b)\n\nif __name__ == \"__main__\":\n    main()\n\n# Solution 2\n\ndef main():\n    print(s-b)\n\nif __name__ == \"__main__\":\n    main()\n\n# Solution 3\n\ndef main():\n    print(s+b)\n\nif __name__ == \"__main__\":\n    main()\n\n# Solution 4\n\ndef main():\n    print(s-b"
   }
 }

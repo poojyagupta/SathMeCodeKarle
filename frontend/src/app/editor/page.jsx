@@ -7,118 +7,124 @@ import CodeEditor from "../../components/CodeEditor";
 export default function Page() {
   const socketRef = useRef(null);
 
-  // 🔹 Project state
   const [project, setProject] = useState(null);
-
-  // 🔹 Currently open file
   const [currentFile, setCurrentFile] = useState("package.json");
   const [logs, setLogs] = useState([]);
-  const [activeTab, setActiveTab] = useState("terminal"); // or "preview"
+  const [activeTab, setActiveTab] = useState("terminal");
   const [previewUrl, setPreviewUrl] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const terminalRef = useRef(null);
   const [conflicts, setConflicts] = useState([]);
-
+  const [aiSuggestion, setAiSuggestion] = useState(null);
+  const [conflictFile, setConflictFile] = useState(null);
+  const conflictTimer = useRef(null);
+  const [isRunning, setIsRunning] = useState(false);
   useEffect(() => {
     socketRef.current = io("http://localhost:5000");
 
     socketRef.current.on("project-update", (updatedProject) => {
       setProject(updatedProject);
-
-      // 🔥 force editor to rebind after project loads
-      setTimeout(() => {
-        setCurrentFile((prev) => prev);
-      }, 50);
+      setTimeout(() => setCurrentFile((prev) => prev), 50);
     });
 
     socketRef.current.emit("request-project");
+
     socketRef.current.on("terminal-output", (data) => {
-      console.log("FRONTEND RECEIVED:", data); // 🔥 ADD THIS
+      console.log("FRONTEND RECEIVED:", data);
+
       setLogs((prev) => [...prev, data]);
+
+      // 🔥 STOP RUNNING WHEN OUTPUT COMES
+      setIsRunning(false);
     });
 
     socketRef.current.on("conflict-detected", (data) => {
-      console.log("⚠ Conflict received:", data);
-
-      setConflicts(data);
-
-      // 🔥 AUTO CLEAR AFTER 5 SECONDS
-      setTimeout(() => {
+      if (!data) {
         setConflicts([]);
+        setAiSuggestion(null);
+        setConflictFile(null);
+        return;
+      }
+
+      setConflicts([data.conflict]);
+      setAiSuggestion(data.aiSuggestion);
+      setConflictFile(data.fileName);
+
+      if (conflictTimer.current) clearTimeout(conflictTimer.current);
+
+      conflictTimer.current = setTimeout(() => {
+        setConflicts([]);
+        setAiSuggestion(null);
+        setConflictFile(null);
       }, 5000);
     });
-    return () => socketRef.current.disconnect();
+
+    return () => {
+      socketRef.current.off("conflict-detected");
+      if (conflictTimer.current) clearTimeout(conflictTimer.current);
+    };
   }, []);
 
-  // 🔥 LOADING GUARD (VERY IMPORTANT)
   if (!project) {
-    return <div style={{ padding: "20px" }}>Loading project...</div>;
+    return (
+      <div style={{ padding: "20px", color: "#ccc" }}>Loading project...</div>
+    );
   }
 
   const handleRenameFile = (oldName) => {
-    if (!project) return;
-
     const newName = prompt("Enter new file name:", oldName);
     if (!newName || newName === oldName) return;
 
-    // ❌ avoid duplicate names
     if (project.files[newName]) {
       alert("File already exists");
       return;
     }
 
     const updatedFiles = { ...project.files };
-
-    // 🔥 IMPORTANT: preserve Yjs key
     updatedFiles[newName] = updatedFiles[oldName];
     delete updatedFiles[oldName];
 
-    const updatedProject = {
-      ...project,
-      files: updatedFiles,
-    };
+    const updatedProject = { ...project, files: updatedFiles };
 
     setProject(updatedProject);
     socketRef.current.emit("project-update", updatedProject);
 
-    // 🔥 if renamed file is open
-    if (currentFile === oldName) {
-      setCurrentFile(newName);
-    }
+    if (currentFile === oldName) setCurrentFile(newName);
   };
-  const handleDeleteFile = (fileName) => {
-    if (!project) return;
 
+  const handleDeleteFile = (fileName) => {
     const updatedFiles = { ...project.files };
     delete updatedFiles[fileName];
 
-    // 🔥 Edge case: if current file deleted
     let newCurrentFile = currentFile;
-
     if (fileName === currentFile) {
-      const remainingFiles = Object.keys(updatedFiles);
-      newCurrentFile = remainingFiles.length > 0 ? remainingFiles[0] : null;
+      const remaining = Object.keys(updatedFiles);
+      newCurrentFile = remaining[0] || null;
     }
 
-    const updatedProject = {
-      ...project,
-      files: updatedFiles,
-    };
+    const updatedProject = { ...project, files: updatedFiles };
 
     setProject(updatedProject);
     socketRef.current.emit("project-update", updatedProject);
-
     setCurrentFile(newCurrentFile);
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
-      {/* 📁 FILE TREE */}
+    <div
+      style={{
+        display: "flex",
+        height: "100vh",
+        background: "#0f172a",
+        color: "#e2e8f0",
+      }}
+    >
+      {/* 📁 SIDEBAR */}
       <div
         style={{
-          width: "220px",
-          borderRight: "1px solid #ccc",
-          padding: "10px",
+          width: "240px",
+          background: "#020617",
+          borderRight: "1px solid #1e293b",
+          padding: "15px",
         }}
       >
         <button
@@ -126,101 +132,93 @@ export default function Page() {
             if (!window.getProjectFiles) return;
 
             const allFiles = window.getProjectFiles();
-
-            // 🔥 ONLY keep files that exist in project structure
             const files = {};
 
-            Object.keys(project.files).forEach((fileName) => {
-              files[fileName] = allFiles[fileName] || "";
+            Object.keys(project.files).forEach((f) => {
+              files[f] = allFiles[f] || "";
             });
 
-            const hasHTML = Object.keys(files).some((file) =>
-              file.endsWith(".html"),
+            // 🔥 FORCE NODE EXECUTION (matches backend)
+            files["package.json"] = JSON.stringify(
+              {
+                name: "demo",
+                version: "1.0.0",
+                scripts: {
+                  dev: "node src/index.js",
+                },
+              },
+              null,
+              2,
             );
 
-            // ✅ ONLY if package.json DOES NOT EXIST AT ALL
-            if (!files["package.json"]) {
-              if (hasHTML) {
-                files["package.json"] = JSON.stringify(
-                  {
-                    name: "demo",
-                    version: "1.0.0",
-                    scripts: {
-                      dev: "npx serve . -l 3001",
-                    },
-                  },
-                  null,
-                  2,
-                );
-              } else {
-                files["package.json"] = JSON.stringify(
-                  {
-                    name: "demo",
-                    version: "1.0.0",
-                    scripts: {
-                      dev: "node src/index.js",
-                    },
-                  },
-                  null,
-                  2,
-                );
-              }
-            }
-
-            console.log("Sending files:", files);
             setLogs([]);
+            setIsRunning(true);
+
             await fetch("http://localhost:5000/run-project", {
               method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ files }),
             });
-            setPreviewUrl("http://localhost:3001");
-            setRefreshKey((prev) => prev + 1);
-            setActiveTab("preview"); // 🔥 auto switch to preview
+
+            // 🔥 switch to terminal (NOT preview)
+            setActiveTab("terminal");
+          }}
+          style={{
+            width: "100%",
+            padding: "10px",
+            borderRadius: "8px",
+            background: "#22c55e",
+            color: "black",
+            fontWeight: "bold",
+            border: "none",
+            cursor: "pointer",
+            marginBottom: "15px",
           }}
         >
-          ▶ Run Project
+          {isRunning ? "⏳ Running..." : "▶ Run Project"}
         </button>
 
-        <h4>Files</h4>
+        <h4 style={{ marginBottom: "10px" }}>Files</h4>
 
-        {/* 🔥 CREATE FILE INPUT */}
         <input
-          placeholder="new file name"
+          placeholder="New file..."
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              const newFileName = e.target.value.trim();
-              if (!newFileName) return;
+              const name = e.target.value.trim();
+              if (!name) return;
 
               const updated = {
                 ...project,
-                files: {
-                  ...project.files,
-                  [newFileName]: "file:" + newFileName,
-                },
+                files: { ...project.files, [name]: "file:" + name },
               };
 
               setProject(updated);
               socketRef.current.emit("project-update", updated);
-
-              setCurrentFile(newFileName);
+              setCurrentFile(name);
               e.target.value = "";
             }
           }}
-          style={{ width: "100%", marginBottom: "10px" }}
+          style={{
+            width: "100%",
+            padding: "8px",
+            borderRadius: "6px",
+            border: "1px solid #334155",
+            background: "#020617",
+            color: "white",
+            marginBottom: "10px",
+          }}
         />
 
-        {/* 📁 FILE LIST */}
         {Object.keys(project.files).map((file) => (
           <div
             key={file}
             style={{
               display: "flex",
               justifyContent: "space-between",
-              padding: "5px",
-              background: currentFile === file ? "#eee" : "transparent",
+              padding: "8px",
+              borderRadius: "6px",
+              marginBottom: "5px",
+              background: currentFile === file ? "#1e293b" : "transparent",
             }}
           >
             <span
@@ -231,83 +229,125 @@ export default function Page() {
             </span>
 
             <div>
-              {/* ✏️ Rename */}
-              <button onClick={() => handleRenameFile(file)}>✏️</button>
-
-              {/* ❌ Delete */}
-              <button onClick={() => handleDeleteFile(file)}>x</button>
+              <button
+                onClick={() => handleRenameFile(file)}
+                style={{ marginRight: "5px" }}
+              >
+                ✏️
+              </button>
+              <button onClick={() => handleDeleteFile(file)}>❌</button>
             </div>
           </div>
         ))}
       </div>
 
-      {/* 🔥 RIGHT SIDE (EDITOR + TERMINAL) */}
+      {/* 🔥 MAIN */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-        {/* 🧠 EDITOR */}
-        <div style={{ flex: 1 }}>
+        {/* EDITOR */}
+        <div style={{ flex: 1, borderBottom: "1px solid #1e293b" }}>
           <CodeEditor
             key={currentFile}
             currentFile={currentFile}
             socket={socketRef.current}
           />
         </div>
+
+        {/* CONFLICT */}
         {conflicts.length > 0 && (
           <div
             style={{
-              background: "#ff4d4f",
-              color: "white",
+              background: "#dc2626",
               padding: "10px",
               fontWeight: "bold",
             }}
           >
-            ⚠ Conflict in function: {conflicts[0].function}
-            <br />
-            👥 Users:{" "}
-            {conflicts[0].users.map((user, index) => (
-              <span key={user + index}>
-                {user}
-                {index !== conflicts[0].users.length - 1 ? ", " : ""}
-              </span>
-            ))}
+            ⚠ Conflict in {conflictFile} → function: {conflicts[0].function}
           </div>
         )}
-        {/* 🔥 TERMINAL */}
-        <div style={{ height: "250px", borderTop: "2px solid #333" }}>
-          {/* 🔥 TAB HEADER */}
-          <div style={{ display: "flex", background: "#1e1e1e" }}>
+
+        {/* AI */}
+        {aiSuggestion && (
+          <div
+            style={{
+              background: "#020617",
+              padding: "10px",
+              fontFamily: "monospace",
+              borderTop: "1px solid #334155",
+            }}
+          >
+            🤖 AI Suggestion:
+            <pre style={{ whiteSpace: "pre-wrap" }}>
+              {aiSuggestion.split("\n").map((line, i) => (
+                <div
+                  key={i}
+                  style={{
+                    background: line.includes("+")
+                      ? "#144d14"
+                      : line.includes("-")
+                        ? "#5a1a1a"
+                        : "transparent",
+                  }}
+                >
+                  {line}
+                </div>
+              ))}
+            </pre>
             <button
-              onClick={() => setActiveTab("terminal")}
               style={{
-                flex: 1,
-                padding: "10px",
-                background: activeTab === "terminal" ? "#333" : "#1e1e1e",
-                color: "white",
+                marginTop: "10px",
+                padding: "6px 12px",
+                background: "#22c55e",
                 border: "none",
+                borderRadius: "6px",
                 cursor: "pointer",
               }}
-            >
-              🖥 Terminal
-            </button>
-          </div>
+              onClick={() => {
+                if (!window.getProjectFiles) return;
+                const files = window.getProjectFiles();
 
-          {/* 🖥 TERMINAL */}
-          {activeTab === "terminal" && (
-            <div
-              ref={terminalRef}
-              style={{
-                height: "100%",
-                background: "black",
-                color: "#00ff00",
-                padding: "10px",
-                overflowY: "auto",
-                fontFamily: "monospace",
+                files[conflictFile] = aiSuggestion;
+
+                socketRef.current.emit("project-update", {
+                  ...project,
+                  files,
+                });
+
+                setConflicts([]);
+                setAiSuggestion(null);
+                setConflictFile(null);
               }}
             >
-              {logs.map((log, index) => (
-                <div key={index}>{log}</div>
-              ))}
-            </div>
-          )}
+              Apply Fix
+            </button>
+          </div>
+        )}
+
+        {/* TERMINAL */}
+        <div style={{ height: "250px", background: "#020617" }}>
+          <div
+            style={{
+              padding: "10px",
+              borderBottom: "1px solid #1e293b",
+              fontWeight: "bold",
+            }}
+          >
+            🖥 Terminal
+          </div>
+
+          <div
+            ref={terminalRef}
+            style={{
+              height: "100%",
+              padding: "10px",
+              overflowY: "auto",
+              fontFamily: "monospace",
+              color: "#22c55e",
+            }}
+          >
+            {logs.map((log, i) => (
+              <div key={i}>{log}</div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

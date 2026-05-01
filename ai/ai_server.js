@@ -7,7 +7,6 @@
   "language": "javascript"
 }  */
 
-  
 import express from "express";
 import cors from "cors";
 import { pipeline } from "@xenova/transformers";
@@ -25,8 +24,8 @@ let generator;
   console.log("Model loaded ✅");
 
   // Start server only after model loads
-  app.listen(5000, () => {
-    console.log("AI Server running on port 5000 🚀");
+  app.listen(5001, () => {
+    console.log("AI Server running on port 5001 🚀");
   });
 })();
 
@@ -45,21 +44,19 @@ app.post("/ai/complete", async (req, res) => {
     const suggestion = output[0].generated_text.slice(prompt.length);
 
     res.json({ suggestion: suggestion.trim() });
-
   } catch (error) {
     console.error("AI ERROR:", error);
-    res.status(500).json({ error: "AI request failed", details: error.message });
+    res
+      .status(500)
+      .json({ error: "AI request failed", details: error.message });
   }
 });
-
 
 // CODE EXPLANATION API
 //// http://localhost:5000/ai/explain
 
 app.post("/ai/explain", async (req, res) => {
-
   try {
-
     const { code_snippet } = req.body;
 
     const prompt = `
@@ -71,36 +68,29 @@ Explanation:
 `;
 
     const output = await generator(prompt, {
-      max_new_tokens: 80
+      max_new_tokens: 80,
     });
 
     const explanation = output[0].generated_text.slice(prompt.length);
 
     res.json({
-      explanation: explanation.trim()
+      explanation: explanation.trim(),
     });
-
   } catch (error) {
-
     console.error("AI ERROR:", error);
 
     res.status(500).json({
       error: "Explanation failed",
-      details: error.message
+      details: error.message,
     });
-
   }
-
 });
-
-
 
 // BUG FINDER API
 //// http://localhost:5000/ai/debug
 
 app.post("/ai/debug", async (req, res) => {
   try {
-
     const { code } = req.body;
 
     const prompt = `
@@ -124,7 +114,7 @@ Answer:
     const output = await generator(prompt, {
       max_new_tokens: 30,
       temperature: 0.1,
-      repetition_penalty: 1.5
+      repetition_penalty: 1.5,
     });
 
     let result = output[0].generated_text.slice(prompt.length).trim();
@@ -155,21 +145,17 @@ Answer:
     }
 
     res.json({
-      bugs: result
+      bugs: result,
     });
-
   } catch (error) {
-
     console.error("AI ERROR:", error);
 
     res.status(500).json({
       error: "Bug detection failed",
-      details: error.message
+      details: error.message,
     });
-
   }
 });
-
 
 // ================= MERGE CONFLICT FEATURE =================
 
@@ -208,7 +194,6 @@ function simpleLineMerge(code1, code2) {
   return { merged, conflict };
 }
 
-
 // ================= MERGE API =================
 // http://localhost:5000/ai/merge
 
@@ -226,7 +211,7 @@ app.post("/ai/merge", async (req, res) => {
         results.push({
           filename,
           status: "no_conflict",
-          merged_code: user1
+          merged_code: user1,
         });
         continue;
       }
@@ -252,7 +237,7 @@ Final Code:
 
         const output = await generator(prompt, {
           max_new_tokens: 150,
-          temperature: 0.2
+          temperature: 0.2,
         });
 
         let aiResult = output[0].generated_text.slice(prompt.length).trim();
@@ -266,26 +251,20 @@ Final Code:
         filename,
         status: conflict ? "conflict" : "merged",
         merged_code: finalCode,
-        conflict_preview: conflict ? merged : null
+        conflict_preview: conflict ? merged : null,
       });
     }
 
     res.json({
       success: true,
-      result: results
+      result: results,
     });
-
   } catch (error) {
     console.error("MERGE ERROR:", error);
 
     res.status(500).json({
       error: "Merge failed",
-      details: error.message
+      details: error.message,
     });
   }
 });
-
-
-
-
-

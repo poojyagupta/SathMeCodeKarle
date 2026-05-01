@@ -8,7 +8,8 @@ const path = require("path");
 const cors = require("cors");
 const app = express();
 const { extractFunctions } = require("./parser");
-
+const fetch = (...args) =>
+  import("node-fetch").then(({ default: fetch }) => fetch(...args));
 app.use(express.json());
 app.use(cors());
 const DATA_PATH = path.join(__dirname, "project.json");
@@ -98,7 +99,7 @@ io.on("connection", (socket) => {
 
     socket.broadcast.emit("project-update", project);
   });
-  socket.on("code-change", ({ fileName, code }) => {
+  socket.on("code-change", async ({ fileName, code }) => {
     if (!userCodeMap[socket.id]) {
       userCodeMap[socket.id] = {};
     }
@@ -121,12 +122,52 @@ io.on("connection", (socket) => {
 
     if (conflicts.length > 0) {
       console.log("🚨 CONFLICT DETECTED:", conflicts);
-    } else {
-      console.log("✅ No conflict");
-    }
 
-    // 🔥 ALWAYS EMIT (IMPORTANT)
-    io.emit("conflict-detected", conflicts);
+      const conflict = conflicts[0];
+      const versions = conflict.changes;
+
+      const user1 = versions[0]?.body || "";
+      const user2 = versions[1]?.body || "";
+
+      try {
+        const response = await fetch("http://localhost:5001/ai/merge", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            files: [
+              {
+                filename: conflict.function,
+                user1,
+                user2,
+              },
+            ],
+          }),
+        });
+
+        const data = await response.json();
+
+        const aiSuggestion = data.result[0]?.merged_code;
+
+        console.log("🤖 AI SUGGESTION:", aiSuggestion);
+
+        io.emit("conflict-detected", {
+          conflict,
+          aiSuggestion,
+          fileName: versions[0]?.file, // 🔥 ADD THIS
+        });
+      } catch (err) {
+        console.error("AI ERROR:", err);
+
+        io.emit("conflict-detected", {
+          conflict,
+          aiSuggestion: null,
+        });
+      }
+    } else {
+      io.emit("conflict-detected", null);
+    }
   });
   socket.on("disconnect", () => {
     delete userCodeMap[socket.id];
@@ -158,7 +199,25 @@ app.post("/run-project", (req, res) => {
       fs.mkdirSync(dir, { recursive: true });
     }
 
-    fs.writeFileSync(filePath, files[fileName]);
+    // 🔥 FORCE CORRECT PACKAGE.JSON
+    if (fileName === "package.json") {
+      fs.writeFileSync(
+        filePath,
+        JSON.stringify(
+          {
+            name: "demo",
+            version: "1.0.0",
+            scripts: {
+              dev: "node src/index.js", // 🔥 FORCE NODE
+            },
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      fs.writeFileSync(filePath, files[fileName]);
+    }
   }
 
   console.log("🔥 Files written to disk");
