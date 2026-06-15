@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@babel/parser": "^7.29.3",
     "@y/websocket-server": "^0.1.1",
     "cors": "^2.8.6",
     "express": "^5.2.1",

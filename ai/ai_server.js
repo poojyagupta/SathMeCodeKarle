@@ -9,26 +9,25 @@
 
 import express from "express";
 import cors from "cors";
-import { pipeline } from "@xenova/transformers";
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-let generator;
+import dotenv from "dotenv";
+dotenv.config();
 
-(async () => {
-  console.log("Loading local AI model... (may take a minute)");
-  // Load small code model
-  generator = await pipeline("text-generation", "Xenova/codegen-350M-mono");
-  console.log("Model loaded ✅");
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-  // Start server only after model loads
-  app.listen(5001, () => {
-    console.log("AI Server running on port 5001 🚀");
-  });
-})();
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+const model = genAI.getGenerativeModel({
+  model: "gemini-2.0-flash",
+});
+
+app.listen(5001, () => {
+  console.log("AI Server running on port 5001 🚀");
+});
 // Test route
 app.get("/", (req, res) => {
   res.send("Local AI server working");
@@ -40,8 +39,13 @@ app.post("/ai/complete", async (req, res) => {
     const { code_before_cursor, language } = req.body;
     const prompt = `# Complete the following ${language} code:\n${code_before_cursor}`;
 
-    const output = await generator(prompt, { max_new_tokens: 50 });
-    const suggestion = output[0].generated_text.slice(prompt.length);
+    const bugResult = await model.generateContent(prompt);
+
+    const response = await bugResult.response;
+
+    const text = response.text();
+
+    const suggestion = text.trim();
 
     res.json({ suggestion: suggestion.trim() });
   } catch (error) {
@@ -67,11 +71,13 @@ ${code_snippet}
 Explanation:
 `;
 
-    const output = await generator(prompt, {
-      max_new_tokens: 80,
-    });
+    const bugResult = await model.generateContent(prompt);
 
-    const explanation = output[0].generated_text.slice(prompt.length);
+    const response = await bugResult.response;
+
+    const text = response.text();
+
+    const explanation = text.trim();
 
     res.json({
       explanation: explanation.trim(),
@@ -111,41 +117,40 @@ ${code}
 Answer:
 `;
 
-    const output = await generator(prompt, {
-      max_new_tokens: 30,
-      temperature: 0.1,
-      repetition_penalty: 1.5,
-    });
+    const result = await model.generateContent(prompt);
 
-    let result = output[0].generated_text.slice(prompt.length).trim();
+    const response = await result.response;
 
+    const text = response.text();
+
+    let bugResult = text.trim();
     // 🧠 FILTER 1: Remove unwanted code generation
     if (
-      result.includes("function") ||
-      result.includes("def ") ||
-      result.includes("{") ||
-      result.includes("}")
+      bugResult.includes("function") ||
+      bugResult.includes("def ") ||
+      bugResult.includes("{") ||
+      bugResult.includes("}")
     ) {
-      result = "no bugs";
+      bugResult = "no bugs";
     }
 
     // 🧠 FILTER 2: Too long = garbage
-    if (result.length > 100) {
-      result = "no bugs";
+    if (bugResult.length > 100) {
+      bugResult = "no bugs";
     }
 
     // 🧠 FILTER 3: If "bug" not present → assume no bug
-    if (!result.toLowerCase().includes("bug")) {
-      result = "no bugs";
+    if (!bugResult.toLowerCase().includes("bug")) {
+      bugResult = "no bugs";
     }
 
     // 🧠 FINAL SAFETY
-    if (!result || result.length < 5) {
-      result = "no bugs";
+    if (!bugResult || bugResult.length < 5) {
+      bugResult = "no bugs";
     }
 
     res.json({
-      bugs: result,
+      bugs: bugResult,
     });
   } catch (error) {
     console.error("AI ERROR:", error);
@@ -235,12 +240,16 @@ ${merged}
 Final Code:
 `;
 
-        const output = await generator(prompt, {
-          max_new_tokens: 150,
-          temperature: 0.2,
-        });
+        const result = await model.generateContent(prompt);
 
-        let aiResult = output[0].generated_text.slice(prompt.length).trim();
+        const response = await result.response;
+
+        let aiResult = response
+          .text()
+          .replace(/```javascript/g, "")
+          .replace(/```js/g, "")
+          .replace(/```/g, "")
+          .trim();
 
         if (aiResult && aiResult.length > 10) {
           finalCode = aiResult;

@@ -1,8 +1,8 @@
 {
   "projectId": "abc",
   "files": {
+    "src/index.js": "console.log(\"hello\");\r\nfunction calculateTotal(items) {\r\n  let total = 0;\r\n\r\n  for (const item of items) {\r\n    total += item.price;\r\n  }\r\n\r\n  return total;\r\n}",
     "package.json": "",
-    "app.js": "function a(s,b)\r\n{\r\n    return s-b;\r\n}",
-    "src/index.js": "def main():\n    print(s+b)\n\nif __name__ == \"__main__\":\n    main()\n\n\"\"\"\n\n# Solution 1\n\ndef main():\n    print(s+b)\n\nif __name__ == \"__main__\":\n    main()\n\n# Solution 2\n\ndef main():\n    print(s-b)\n\nif __name__ == \"__main__\":\n    main()\n\n# Solution 3\n\ndef main():\n    print(s+b)\n\nif __name__ == \"__main__\":\n    main()\n\n# Solution 4\n\ndef main():\n    print(s-b"
+    "app.js": "function calculateTotal(items) {\r\n  let total = 0;\r\n\r\n  for (const item of items) {\r\n    total += item.price * 1.18;\r\n  }\r\n\r\n  return total;\r\n}"
   }
 }
