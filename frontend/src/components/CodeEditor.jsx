@@ -180,9 +180,19 @@ function CodeEditor({ currentFile, socket }) {
             const startIndex = model.getOffsetAt(selection.getStartPosition());
             const endIndex = model.getOffsetAt(selection.getEndPosition());
 
+            const anchorRel = Y.createRelativePositionFromTypeIndex(
+              ytext.current,
+              startIndex,
+            );
+
+            const headRel = Y.createRelativePositionFromTypeIndex(
+              ytext.current,
+              endIndex,
+            );
+
             awareness.current.setLocalStateField("cursor", {
-              anchor: startIndex,
-              head: endIndex,
+              anchor: anchorRel,
+              head: headRel,
             });
 
             console.log("Cursor broadcast:", { startIndex, endIndex });
@@ -204,13 +214,29 @@ function CodeEditor({ currentFile, socket }) {
               if (!state.cursor) return;
 
               const { anchor, head } = state.cursor;
+              if (typeof anchor === "number" || typeof head === "number") {
+                return;
+              }
+
               const userInfo = state.user || {
                 name: "unknown",
                 color: "#ff0000",
               };
 
-              const startPos = offsetToPosition(anchor);
-              const endPos = offsetToPosition(head);
+              const anchorAbs = Y.createAbsolutePositionFromRelativePosition(
+                anchor,
+                ydoc.current,
+              );
+
+              const headAbs = Y.createAbsolutePositionFromRelativePosition(
+                head,
+                ydoc.current,
+              );
+
+              if (!anchorAbs || !headAbs) return;
+
+              const startPos = offsetToPosition(anchorAbs.index);
+              const endPos = offsetToPosition(headAbs.index);
 
               const cursorClass = `remote-cursor-${clientId}`;
 
@@ -219,12 +245,12 @@ function CodeEditor({ currentFile, socket }) {
                 const style = document.createElement("style");
                 style.id = cursorClass;
                 style.innerHTML = `
-        .${cursorClass} {
-          border-left: 2px solid ${userInfo.color};
-          margin-left: -1px;
-          pointer-events: none;
-        }
-      `;
+    .${cursorClass} {
+      border-left: 2px solid ${userInfo.color};
+      margin-left: -1px;
+      pointer-events: none;
+    }
+  `;
                 document.head.appendChild(style);
               }
 

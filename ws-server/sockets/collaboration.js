@@ -2,6 +2,7 @@ const { extractFunctions } = require("../utils/parser");
 const { detectConflicts } = require("../services/conflictService");
 const { getAISuggestion } = require("../services/aiService");
 const { loadProject, saveProject } = require("../services/projectService");
+const { addConflict } = require("../services/conflictQueue");
 
 const userCodeMap = {};
 const userFunctionsMap = {};
@@ -53,29 +54,44 @@ function setupCollaboration(io) {
       if (conflicts.length > 0) {
         console.log("🚨 CONFLICT DETECTED:", conflicts);
 
-        const conflict = conflicts[0];
+        for (const conflict of conflicts) {
+          try {
+            const aiSuggestion = await getAISuggestion(conflict);
 
-        try {
-          console.log("🔥 Calling AI Service");
+            const queueItem = {
+              id: Date.now(),
+              function: conflict.function,
+              users: conflict.users,
+              changes: conflict.changes,
+              aiSuggestion,
+              timestamp: new Date().toISOString(),
+              status: "pending",
+            };
 
-          const aiSuggestion = await getAISuggestion(conflict);
+            addConflict(queueItem);
 
-          console.log("🔥 AI Returned:", aiSuggestion);
+            io.emit("conflict-detected", {
+              conflict,
+              aiSuggestion,
+              fileName: conflict.changes[0]?.file,
+            });
+          } catch (err) {
+            const queueItem = {
+              id: Date.now(),
+              function: conflict.function,
+              users: conflict.users,
+              changes: conflict.changes, // NEW
+              aiSuggestion: null,
+              timestamp: new Date().toISOString(),
+              status: "pending",
+            };
+            addConflict(queueItem);
 
-          console.log("🤖 AI SUGGESTION:", aiSuggestion);
-
-          io.emit("conflict-detected", {
-            conflict,
-            aiSuggestion,
-            fileName: conflict.changes[0]?.file,
-          });
-        } catch (err) {
-          console.error("AI ERROR:", err);
-
-          io.emit("conflict-detected", {
-            conflict,
-            aiSuggestion: null,
-          });
+            io.emit("conflict-detected", {
+              conflict,
+              aiSuggestion: null,
+            });
+          }
         }
       } else {
         io.emit("conflict-detected", null);

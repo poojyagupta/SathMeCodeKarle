@@ -19,6 +19,9 @@ export default function Page() {
   const [conflictFile, setConflictFile] = useState(null);
   const conflictTimer = useRef(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [conflictQueue, setConflictQueue] = useState([]);
+  const [showConflicts, setShowConflicts] = useState(false);
+  const [selectedConflict, setSelectedConflict] = useState(null);
   useEffect(() => {
     socketRef.current = io("http://localhost:5000");
 
@@ -37,7 +40,18 @@ export default function Page() {
       // 🔥 STOP RUNNING WHEN OUTPUT COMES
       setIsRunning(false);
     });
+    const fetchConflicts = async () => {
+      try {
+        const response = await fetch("http://localhost:5000/conflicts");
+        const data = await response.json();
 
+        setConflictQueue(data);
+      } catch (err) {
+        console.error("Failed to fetch conflicts:", err);
+      }
+    };
+
+    fetchConflicts();
     socketRef.current.on("conflict-detected", (data) => {
       if (!data) {
         setConflicts([]);
@@ -49,6 +63,10 @@ export default function Page() {
       setConflicts([data.conflict]);
       setAiSuggestion(data.aiSuggestion);
       setConflictFile(data.fileName);
+
+      fetch("http://localhost:5000/conflicts")
+        .then((res) => res.json())
+        .then((queue) => setConflictQueue(queue));
 
       if (conflictTimer.current) clearTimeout(conflictTimer.current);
 
@@ -239,6 +257,95 @@ export default function Page() {
             </div>
           </div>
         ))}
+        <hr
+          style={{
+            marginTop: "15px",
+            marginBottom: "15px",
+            borderColor: "#334155",
+          }}
+        />
+
+        <div
+          onClick={() => setShowConflicts(!showConflicts)}
+          style={{
+            padding: "10px",
+            borderRadius: "8px",
+            background: "#7f1d1d",
+            color: "white",
+            fontWeight: "bold",
+            cursor: "pointer",
+          }}
+        >
+          ⚠ Conflicts ({conflictQueue.length})
+        </div>
+        {showConflicts && (
+          <div
+            style={{
+              marginTop: "10px",
+              background: "#1e293b",
+              borderRadius: "8px",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "10px",
+                fontWeight: "bold",
+                borderBottom: "1px solid #334155",
+              }}
+            >
+              Conflict Review Center
+            </div>
+
+            {conflictQueue.length === 0 ? (
+              <div style={{ padding: "10px" }}>No conflicts found.</div>
+            ) : (
+              conflictQueue.map((conflict) => (
+                <div
+                  key={conflict.id}
+                  onClick={() => setSelectedConflict(conflict)}
+                  style={{
+                    padding: "10px",
+                    borderBottom: "1px solid #334155",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: "bold" }}>{conflict.function}</div>
+
+                  <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                    Status: {conflict.status}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+        {selectedConflict && (
+          <div
+            style={{
+              marginTop: "10px",
+              background: "#0f172a",
+              border: "1px solid #334155",
+              borderRadius: "8px",
+              padding: "10px",
+              color: "white",
+            }}
+          >
+            <h3>{selectedConflict.function}</h3>
+
+            <pre>{selectedConflict.changes?.[0]?.body}</pre>
+
+            <hr />
+
+            <pre>{selectedConflict.changes?.[1]?.body}</pre>
+
+            <hr />
+
+            <div>
+              {selectedConflict.aiSuggestion || "No AI suggestion available"}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 🔥 MAIN */}

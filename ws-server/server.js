@@ -5,12 +5,12 @@ const cors = require("cors");
 
 const setupCollaboration = require("./sockets/collaboration");
 const createRunProjectRoute = require("./routes/runProject");
-
+const conflictsRoute = require("./routes/conflicts");
 const app = express();
 
 app.use(express.json());
 app.use(cors());
-
+app.use("/conflicts", conflictsRoute);
 const server = http.createServer(app);
 
 const io = new Server(server, {
